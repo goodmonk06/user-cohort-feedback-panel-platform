@@ -1,0 +1,83 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model PanelUser {
+  id             String             @id @default(cuid())
+  email          String             @unique
+  name           String
+  attributesJson Json               @default("{}")
+  createdAt      DateTime           @default(now())
+
+  cohortMembers  CohortMember[]
+  responses      FeedbackResponse[]
+
+  @@map("panel_users")
+}
+
+model Cohort {
+  id          String             @id @default(cuid())
+  name        String             @unique
+  description String?
+  ruleJson    Json               @default("{}")
+  createdAt   DateTime           @default(now())
+
+  members     CohortMember[]
+  campaigns   FeedbackCampaign[]
+
+  @@map("cohorts")
+}
+
+model CohortMember {
+  id        String   @id @default(cuid())
+  cohortId  String
+  userId    String
+  createdAt DateTime @default(now())
+
+  cohort    Cohort     @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  user      PanelUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([cohortId, userId])
+  @@map("cohort_members")
+}
+
+model FeedbackCampaign {
+  id          String             @id @default(cuid())
+  cohortId    String
+  name        String
+  type        CampaignType
+  payloadJson Json               @default("{}")
+  createdAt   DateTime           @default(now())
+
+  cohort      Cohort             @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  responses   FeedbackResponse[]
+
+  @@map("feedback_campaigns")
+}
+
+model FeedbackResponse {
+  id           String           @id @default(cuid())
+  campaignId   String
+  userId       String
+  responseJson Json             @default("{}")
+  createdAt    DateTime         @default(now())
+
+  campaign     FeedbackCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user         PanelUser        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, userId])
+  @@map("feedback_responses")
+}
+
+enum CampaignType {
+  survey
+  interview
+}
