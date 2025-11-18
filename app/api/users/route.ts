@@ -1,55 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { createUserSchema } from '@/lib/validation'
+import { asyncHandler } from '@/lib/errors'
+import { logger } from '@/lib/logger'
 
 // GET /api/users - List all users
-export async function GET() {
-  try {
-    const users = await prisma.panelUser.findMany({
-      orderBy: { createdAt: 'desc' }
-    })
-    return NextResponse.json(users)
-  } catch (error) {
-    console.error('Error fetching users:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch users' },
-      { status: 500 }
-    )
-  }
-}
+export const GET = asyncHandler(async () => {
+  logger.info('Fetching all users')
+  const users = await prisma.panelUser.findMany({
+    orderBy: { createdAt: 'desc' }
+  })
+  logger.info(`Retrieved ${users.length} users`)
+  return NextResponse.json(users)
+})
 
 // POST /api/users - Create a new user
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json()
-    const { email, name, attributesJson } = body
+export const POST = asyncHandler(async (request: NextRequest) => {
+  const body = await request.json()
+  const validatedData = createUserSchema.parse(body)
 
-    if (!email || !name) {
-      return NextResponse.json(
-        { error: 'Email and name are required' },
-        { status: 400 }
-      )
-    }
+  logger.info('Creating new user', { email: validatedData.email })
 
-    const user = await prisma.panelUser.create({
-      data: {
-        email,
-        name,
-        attributesJson: attributesJson || {}
-      }
-    })
+  const user = await prisma.panelUser.create({
+    data: validatedData
+  })
 
-    return NextResponse.json(user, { status: 201 })
-  } catch (error: any) {
-    console.error('Error creating user:', error)
-    if (error?.code === 'P2002') {
-      return NextResponse.json(
-        { error: 'Email already exists' },
-        { status: 409 }
-      )
-    }
-    return NextResponse.json(
-      { error: 'Failed to create user' },
-      { status: 500 }
-    )
-  }
-}
+  logger.info('User created successfully', { userId: user.id })
+  return NextResponse.json(user, { status: 201 })
+})

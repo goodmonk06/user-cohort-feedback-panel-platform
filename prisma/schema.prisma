@@ -15,10 +15,15 @@ model PanelUser {
   email          String             @unique
   name           String
   attributesJson Json               @default("{}")
+  status         UserStatus         @default(active)
   createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
 
   cohortMembers  CohortMember[]
   responses      FeedbackResponse[]
+  preferences    UserPreference?
+  tags           UserTag[]
+  auditLogs      AuditLog[]
 
   @@map("panel_users")
 }
@@ -28,10 +33,14 @@ model Cohort {
   name        String             @unique
   description String?
   ruleJson    Json               @default("{}")
+  isActive    Boolean            @default(true)
   createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
 
   members     CohortMember[]
   campaigns   FeedbackCampaign[]
+  tags        CohortTag[]
+  analytics   CohortAnalytics?
 
   @@map("cohorts")
 }
@@ -50,34 +59,204 @@ model CohortMember {
 }
 
 model FeedbackCampaign {
-  id          String             @id @default(cuid())
-  cohortId    String
-  name        String
-  type        CampaignType
-  payloadJson Json               @default("{}")
-  createdAt   DateTime           @default(now())
+  id           String             @id @default(cuid())
+  cohortId     String
+  templateId   String?
+  name         String
+  type         CampaignType
+  status       CampaignStatus     @default(draft)
+  payloadJson  Json               @default("{}")
+  scheduledFor DateTime?
+  launchedAt   DateTime?
+  closedAt     DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
 
-  cohort      Cohort             @relation(fields: [cohortId], references: [id], onDelete: Cascade)
-  responses   FeedbackResponse[]
+  cohort       Cohort              @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  template     CampaignTemplate?   @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  responses    FeedbackResponse[]
+  tags         CampaignTag[]
+  analytics    CampaignAnalytics?
 
   @@map("feedback_campaigns")
 }
 
 model FeedbackResponse {
-  id           String           @id @default(cuid())
-  campaignId   String
-  userId       String
-  responseJson Json             @default("{}")
-  createdAt    DateTime         @default(now())
+  id              String           @id @default(cuid())
+  campaignId      String
+  userId          String
+  responseJson    Json             @default("{}")
+  sentimentScore  Float?
+  completionRate  Float?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
-  campaign     FeedbackCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  user         PanelUser        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaign        FeedbackCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user            PanelUser        @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([campaignId, userId])
   @@map("feedback_responses")
 }
 
+// Campaign Template for reusable campaigns
+model CampaignTemplate {
+  id           String         @id @default(cuid())
+  name         String
+  description  String?
+  type         CampaignType
+  category     String?
+  payloadJson  Json           @default("{}")
+  isPublic     Boolean        @default(false)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  campaigns    FeedbackCampaign[]
+
+  @@map("campaign_templates")
+}
+
+// Tags system
+model Tag {
+  id          String      @id @default(cuid())
+  name        String      @unique
+  category    String?
+  color       String?
+  createdAt   DateTime    @default(now())
+
+  users       UserTag[]
+  cohorts     CohortTag[]
+  campaigns   CampaignTag[]
+
+  @@map("tags")
+}
+
+model UserTag {
+  userId    String
+  tagId     String
+  createdAt DateTime  @default(now())
+
+  user      PanelUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tag       Tag       @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([userId, tagId])
+  @@map("user_tags")
+}
+
+model CohortTag {
+  cohortId  String
+  tagId     String
+  createdAt DateTime  @default(now())
+
+  cohort    Cohort @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  tag       Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([cohortId, tagId])
+  @@map("cohort_tags")
+}
+
+model CampaignTag {
+  campaignId String
+  tagId      String
+  createdAt  DateTime  @default(now())
+
+  campaign   FeedbackCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  tag        Tag              @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([campaignId, tagId])
+  @@map("campaign_tags")
+}
+
+// User Preferences
+model UserPreference {
+  id                    String   @id @default(cuid())
+  userId                String   @unique
+  optedIn               Boolean  @default(true)
+  emailNotifications    Boolean  @default(true)
+  smsNotifications      Boolean  @default(false)
+  maxSurveysPerMonth    Int      @default(4)
+  preferredLanguage     String   @default("en")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  user                  PanelUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
+}
+
+// Analytics aggregates
+model CohortAnalytics {
+  id                  String   @id @default(cuid())
+  cohortId            String   @unique
+  memberCount         Int      @default(0)
+  activeMembers       Int      @default(0)
+  avgResponseRate     Float    @default(0)
+  lastMaterializedAt  DateTime?
+  calculatedAt        DateTime @default(now())
+
+  cohort              Cohort @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+
+  @@map("cohort_analytics")
+}
+
+model CampaignAnalytics {
+  id                  String   @id @default(cuid())
+  campaignId          String   @unique
+  targetCount         Int      @default(0)
+  responseCount       Int      @default(0)
+  responseRate        Float    @default(0)
+  avgSentiment        Float?
+  avgCompletionRate   Float?
+  calculatedAt        DateTime @default(now())
+
+  campaign            FeedbackCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@map("campaign_analytics")
+}
+
+// Audit Trail
+model AuditLog {
+  id          String     @id @default(cuid())
+  userId      String?
+  entityType  String
+  entityId    String
+  action      AuditAction
+  changes     Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime   @default(now())
+
+  user        PanelUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// Enums
 enum CampaignType {
   survey
   interview
+}
+
+enum CampaignStatus {
+  draft
+  scheduled
+  active
+  paused
+  completed
+  archived
+}
+
+enum UserStatus {
+  active
+  inactive
+  suspended
+}
+
+enum AuditAction {
+  created
+  updated
+  deleted
+  viewed
 }
